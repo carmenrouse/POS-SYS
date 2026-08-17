@@ -39,10 +39,9 @@ export default function POSConnectionsPage() {
     setBusyPlatform(platform);
     try {
       const form = forms[platform] || {};
-      await client.put(`/pos-connections/${platform.toLowerCase()}`, {
-        accessToken: form.accessToken,
-        externalLocationId: form.externalLocationId,
-      });
+      const payload = { accessToken: form.accessToken, externalLocationId: form.externalLocationId };
+      if (platform === 'SHOPIFY') payload.config = { shopDomain: form.shopDomain };
+      await client.put(`/pos-connections/${platform.toLowerCase()}`, payload);
       setForms((prev) => ({ ...prev, [platform]: {} }));
       load();
     } catch (err) {
@@ -116,6 +115,16 @@ export default function POSConnectionsPage() {
                   onChange={(e) => updateForm(platform, 'externalLocationId', e.target.value)}
                 />
               </Field>
+              {platform === 'SHOPIFY' && (
+                <Field label="Shop domain">
+                  <input
+                    className="input"
+                    placeholder="my-store.myshopify.com"
+                    value={form.shopDomain ?? connection?.config?.shopDomain ?? ''}
+                    onChange={(e) => updateForm(platform, 'shopDomain', e.target.value)}
+                  />
+                </Field>
+              )}
             </div>
             <Button onClick={() => saveConnection(platform)} loading={busyPlatform === platform} style={{ marginRight: 8 }}>
               Save
