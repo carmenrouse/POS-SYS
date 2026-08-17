@@ -1,9 +1,10 @@
-# L&H Poultry POS
+# PO/Inventory Sync
 
-A full-stack mobile point-of-sale application for small retail businesses: multi-tenant, multi-user (Owner/Manager/Cashier), with purchase ordering (manual and scan-to-PO via OCR), inventory receiving, checkout with barcode scanning, and a generic REST adapter for pushing products to external web listings.
+A mobile + web tool that helps small retailers manage purchase orders and inventory data **without replacing their existing POS**. It ingests messy supplier data — scanned paper POs, PDFs, and CSVs in inconsistent formats — cleans and validates it, and pushes clean data into the retailer's existing POS platform (Square, Shopify, and eventually Clover/Lightspeed) via that platform's API, or exports a corrected file if no integration is configured yet.
 
 - **`backend/`** — Node.js/Express REST API, PostgreSQL via Prisma, JWT auth. See `backend/README.md` for the full route reference.
-- **`mobile/`** — React Native (Expo) app for iOS/Android. See `mobile/README.md`.
+- **`web/`** — React (Vite) app: CSV/XLSX upload, column-mapping UI, review/approve screen, supplier mapping management, POS connection settings. The desk-based half of the workflow.
+- **`mobile/`** — React Native (Expo) app: camera capture for scan-to-import, the same review/approve pipeline, push status/history. The phone-in-hand half.
 
 ## Quick start
 
@@ -13,28 +14,34 @@ cd backend
 cp .env.example .env          # point DATABASE_URL at a local Postgres instance
 npm install
 npx prisma migrate dev --name init
-npm run seed                  # sample business, users, supplier, products, one PO
+npm run seed                  # sample business, users, suppliers, products, mock POS connections, 2 messy sample CSVs
 npm run dev                   # http://localhost:4000
 
-# 2. Mobile app (separate terminal)
+# 2. Web app (separate terminal)
+cd web
+npm install
+npm run dev                   # http://localhost:5173 (proxies /api and /uploads to the backend)
+
+# 3. Mobile app (separate terminal, optional)
 cd mobile
 npm install
-npm start                     # then press i / a, or scan the QR code with Expo Go
+npm start                     # press i / a, or scan the QR code with Expo Go
 ```
 
 Log in with a seeded account (password `password123` for all):
 - `owner@lhpoultry.test` — Owner
 - `manager@lhpoultry.test` — Manager
-- `cashier@lhpoultry.test` — Cashier
+- `staff@lhpoultry.test` — Staff
+
+Try it: log into the web app, go to **Upload File**, and upload `backend/uploads/seed-coastal-feed.csv` — a deliberately messy sample (currency symbols, a leading-zero SKU, blank/duplicate/negative/non-numeric rows) — to watch the mapping suggestion and per-row validation work.
 
 ## What's implemented
 
-- **Multi-tenant data model** (`Business` → `User`, `Supplier`, `Product`, `PurchaseOrder`/`PurchaseOrderLineItem`, `Sale`/`SaleLineItem`, `InventoryAdjustment`, `WebExportConfig`/`WebListing`) with every query scoped to the authenticated user's business.
-- **Role-based permissions** (Owner > Manager > Cashier), enforced server-side.
-- **Purchase orders**: draft → submit → (partially) receive → closed, with an audited `InventoryAdjustment` per receipt and cost-variance flagging when the received cost differs from the PO.
-- **Scan-to-PO**: capture/import a photo or PDF, run it through a pluggable OCR adapter (mock adapter for local dev; AWS Textract and Google Document AI adapters included, swap in via `OCR_PROVIDER`), fuzzy-match extracted lines to existing products, and review/correct everything before it becomes a normal `PurchaseOrder` — scanning is an alternate entry point into the same create endpoint, not a separate data path.
-- **POS checkout**: product search or barcode scan, cart, tax, cash/card, stock decrement with a configurable negative-stock guard, receipt/sales history.
-- **Web export**: a generic REST adapter maps `Product` fields into an external API's JSON shape per a business-configured field-mapping template, pushes per-product or in bulk, and tracks sync status/errors — designed so a platform-specific adapter (Shopify, WooCommerce, ...) can be swapped in later without touching the data model.
-- **Tests**: `backend/tests/` unit-tests the pure calculation cores for PO receiving, sale checkout, and web-export field mapping (`npm test` in `backend/`).
+- **Multi-tenant data model** (`Business` → `User`, `Supplier`/`SupplierFieldMapping`, `ImportJob`/`ImportRow`, `Product`, `POSConnection`, `PushLog`) with every query scoped to the authenticated user's business.
+- **Role-based permissions** (Owner > Manager > Staff), enforced server-side.
+- **CSV/XLSX normalization** (Feature 1, validated end-to-end first per the build brief): fuzzy header-to-schema matching with a synonym dictionary, saved per-supplier mapping profiles that auto-apply on repeat imports, type coercion (currency symbols, thousands separators, leading-zero SKUs preserved), and per-row validation with specific human-readable reasons — mechanical problems (missing SKU/name, unparseable/negative numbers) are errors; ambiguous ones (zero cost, outlier quantities/costs, duplicate SKUs) are flagged for a human, never silently guessed at.
+- **Scan-to-import** (Feature 2): a pluggable OCR adapter (mock/Textract/DocumentAI) extracts line items from a photo or PDF, which then flow through the *exact same* validation/review/push pipeline as a CSV import — scanning is an alternate entry point, not a separate code path.
+- **POS push** (Feature 3): a generic adapter interface (`testConnection`, `pushRows`) with Square and Shopify fully implemented — each handling that platform's real quirks (Square's all-or-nothing catalog batches vs. Shopify's per-request rate limiting) — and Clover/Lightspeed stubbed behind the same interface. New products are only created in the POS after explicit per-row confirmation; every push attempt is logged to `PushLog` for a full audit trail.
+- **Tests**: 70 unit tests in `backend/tests/` covering column-mapping, type-coercion edge cases, validation rules, product matching, and the Square/Shopify adapters' payload mapping and orchestration logic (see `backend/README.md` for the breakdown and a note on what couldn't be tested against live POS APIs in this environment).
 
-See `backend/README.md` for the full API reference and `mobile/README.md` for the screen-by-screen breakdown of the app.
+See `backend/README.md`, `web/README.md`, and `mobile/README.md` for the full details on each piece.
