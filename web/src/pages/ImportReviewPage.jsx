@@ -100,6 +100,9 @@ export default function ImportReviewPage() {
   const [confirmedRowIds, setConfirmedRowIds] = useState(new Set());
   const [pushing, setPushing] = useState(false);
   const [pushResult, setPushResult] = useState(null);
+  const [suppliers, setSuppliers] = useState([]);
+  const [pickedSupplierId, setPickedSupplierId] = useState('');
+  const [savingSupplier, setSavingSupplier] = useState(false);
 
   function load() {
     client
@@ -119,6 +122,27 @@ export default function ImportReviewPage() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    client
+      .get('/suppliers')
+      .then(({ data }) => setSuppliers(data))
+      .catch(() => {});
+  }, []);
+
+  async function saveSupplier() {
+    if (!pickedSupplierId) return;
+    setSavingSupplier(true);
+    setError('');
+    try {
+      await client.patch(`/import-jobs/${id}`, { supplierId: pickedSupplierId });
+      load();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setSavingSupplier(false);
+    }
+  }
 
   async function saveRow(rowId, form) {
     setError('');
@@ -250,6 +274,10 @@ export default function ImportReviewPage() {
             </div>
           </div>
           <div>
+            <span className="help-text">Source</span>
+            <div>{job.sourceType.replace('_', ' ')}</div>
+          </div>
+          <div>
             <span className="help-text">Uploaded</span>
             <div>{formatDateTime(job.createdAt)}</div>
           </div>
@@ -260,7 +288,37 @@ export default function ImportReviewPage() {
             </div>
           </div>
         </div>
+
+        {!job.supplierId && canEdit && (
+          <div className="row" style={{ marginTop: 16, alignItems: 'flex-end' }}>
+            <Field label="No supplier matched — pick one">
+              <select value={pickedSupplierId} onChange={(e) => setPickedSupplierId(e.target.value)}>
+                <option value="">Choose a supplier...</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Button onClick={saveSupplier} loading={savingSupplier} disabled={!pickedSupplierId} style={{ flex: '0 0 auto' }}>
+              Set supplier
+            </Button>
+          </div>
+        )}
       </Card>
+
+      {(job.sourceType === 'SCAN_IMAGE' || job.sourceType === 'SCAN_PDF') && job.originalFileUrl && (
+        <Card title="Scanned document">
+          {job.sourceType === 'SCAN_IMAGE' ? (
+            <img src={job.originalFileUrl} alt="Scanned purchase order" style={{ maxWidth: '100%', borderRadius: 8 }} />
+          ) : (
+            <a href={job.originalFileUrl} target="_blank" rel="noreferrer">
+              View original PDF
+            </a>
+          )}
+        </Card>
+      )}
 
       {canEdit && job.status === 'NEEDS_REVIEW' && (
         <Card>

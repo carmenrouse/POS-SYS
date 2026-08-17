@@ -16,6 +16,7 @@ export default function Layout() {
           </NavLink>
           <NavLink to="/import-jobs">Imports</NavLink>
           <NavLink to="/upload">Upload File</NavLink>
+          <NavLink to="/scan">Scan Document</NavLink>
           <NavLink to="/suppliers">Suppliers</NavLink>
           {hasRole('MANAGER') && <NavLink to="/products">Products</NavLink>}
           {hasRole('OWNER') && <NavLink to="/pos-connections">POS Connections</NavLink>}

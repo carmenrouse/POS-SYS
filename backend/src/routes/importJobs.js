@@ -224,6 +224,36 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// Set/correct which supplier a job belongs to — mainly for scans, where OCR
+// couldn't confidently auto-match one from the document header.
+router.patch(
+  '/:id',
+  requireRole('MANAGER'),
+  [body('supplierId').isString().notEmpty()],
+  validate,
+  async (req, res, next) => {
+    try {
+      const job = await prisma.importJob.findFirst({ where: { id: req.params.id, businessId: req.user.businessId } });
+      if (!job) throw new ApiError(404, 'Import job not found');
+      if (['PUSHED', 'FAILED'].includes(job.status)) throw new ApiError(400, `Cannot edit a job in status ${job.status}`);
+
+      const supplier = await prisma.supplier.findFirst({
+        where: { id: req.body.supplierId, businessId: req.user.businessId },
+      });
+      if (!supplier) throw new ApiError(400, 'Invalid supplier');
+
+      const updated = await prisma.importJob.update({
+        where: { id: job.id },
+        data: { supplierId: supplier.id },
+        include: { supplier: true, rows: { orderBy: { rowIndex: 'asc' }, include: { matchedProduct: true } } },
+      });
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // Edit one row's mapped data (human correction) — re-coerces, re-validates,
 // and re-matches against the product catalog.
 router.patch(
