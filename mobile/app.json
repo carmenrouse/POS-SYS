@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "PO/Inventory Sync",
+    "slug": "po-inventory-sync",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#14374a"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.posync.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used to capture photos of paper purchase orders and invoices for OCR import."
+      }
+    },
+    "android": {
+      "package": "com.posync.mobile",
+      "permissions": ["CAMERA"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Used to capture photos of paper purchase orders and invoices for OCR import."
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "http://localhost:4000/api"
+    }
+  }
+}
