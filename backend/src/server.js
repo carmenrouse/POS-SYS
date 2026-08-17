@@ -4,5 +4,5 @@ const app = require('./app');
 const port = process.env.PORT || 4000;
 
 app.listen(port, () => {
-  console.log(`L&H Poultry POS API listening on port ${port}`);
+  console.log(`PO/Inventory Sync API listening on port ${port}`);
 });

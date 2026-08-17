@@ -10,73 +10,78 @@ datasource db {
 enum Role {
   OWNER
   MANAGER
-  CASHIER
+  STAFF
 }
 
-enum PurchaseOrderStatus {
-  DRAFT
-  SUBMITTED
-  PARTIALLY_RECEIVED
-  RECEIVED
-  CLOSED
-  CANCELLED
+enum ImportSourceType {
+  CSV
+  XLSX
+  SCAN_IMAGE
+  SCAN_PDF
 }
 
-enum PurchaseOrderSource {
-  MANUAL
-  SCANNED
+enum ImportJobStatus {
+  PROCESSING
+  NEEDS_REVIEW
+  APPROVED
+  PUSHED
+  PARTIALLY_PUSHED
+  FAILED
 }
 
-enum PaymentMethod {
-  CASH
-  CARD
-}
-
-enum AdjustmentReason {
-  PO_RECEIPT
-  SALE
-  MANUAL_CORRECTION
-}
-
-enum SyncStatus {
-  NOT_SYNCED
-  PENDING
-  SYNCED
+enum RowValidationStatus {
+  CLEAN
+  NEEDS_REVIEW
   ERROR
 }
 
-model Business {
-  id                  String   @id @default(cuid())
-  name                String
-  allowNegativeStock  Boolean  @default(false)
-  taxRate             Decimal  @default(0) @db.Decimal(6, 4)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+enum POSPlatform {
+  SQUARE
+  CLOVER
+  SHOPIFY
+  LIGHTSPEED
+}
 
-  users          User[]
-  suppliers      Supplier[]
-  products       Product[]
-  purchaseOrders PurchaseOrder[]
-  sales          Sale[]
-  webExportConfigs WebExportConfig[]
+enum POSConnectionStatus {
+  NOT_CONNECTED
+  CONNECTED
+  ERROR
+}
+
+enum PushAction {
+  CREATE_PRODUCT
+  UPDATE_INVENTORY
+}
+
+model Business {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                 User[]
+  suppliers             Supplier[]
+  supplierFieldMappings SupplierFieldMapping[]
+  importJobs            ImportJob[]
+  products              Product[]
+  posConnections        POSConnection[]
 }
 
 model User {
-  id         String   @id @default(cuid())
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  email      String
-  name       String
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  email        String
+  name         String
   passwordHash String
-  role       Role     @default(CASHIER)
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  role         Role     @default(STAFF)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  purchaseOrdersCreated PurchaseOrder[] @relation("POCreatedBy")
-  purchaseOrdersReceived PurchaseOrder[] @relation("POReceivedBy")
-  sales      Sale[]
-  inventoryAdjustments InventoryAdjustment[]
+  importJobsCreated  ImportJob[] @relation("ImportJobCreatedBy")
+  importJobsApproved ImportJob[] @relation("ImportJobApprovedBy")
+  pushLogs           PushLog[]
 
   @@unique([businessId, email])
   @@index([businessId])
@@ -90,173 +95,151 @@ model Supplier {
   contactName String?
   email       String?
   phone       String?
-  address     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  purchaseOrders PurchaseOrder[]
+  fieldMapping SupplierFieldMapping?
+  importJobs   ImportJob[]
 
   @@index([businessId])
 }
 
-model Product {
-  id            String   @id @default(cuid())
-  businessId    String
-  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  sku           String
-  name          String
-  description   String?
-  cost          Decimal  @default(0) @db.Decimal(10, 2)
-  price         Decimal  @default(0) @db.Decimal(10, 2)
-  quantityOnHand Int     @default(0)
-  reorderPoint  Int      @default(0)
-  category      String?
-  images        String[] @default([])
-  barcode       String?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+// Saved column-mapping profile for a supplier, so repeat imports auto-map.
+// { "<incoming CSV header>": "<internal field name>" }
+model SupplierFieldMapping {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplierId String   @unique
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  mapping    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  purchaseOrderLineItems PurchaseOrderLineItem[]
-  saleLineItems          SaleLineItem[]
-  inventoryAdjustments   InventoryAdjustment[]
-  webListings            WebListing[]
-
-  @@unique([businessId, sku])
   @@index([businessId])
-  @@index([businessId, barcode])
 }
 
-model PurchaseOrder {
-  id             String              @id @default(cuid())
-  businessId     String
-  business       Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  supplierId     String
-  supplier       Supplier            @relation(fields: [supplierId], references: [id])
-  status         PurchaseOrderStatus @default(DRAFT)
-  source         PurchaseOrderSource @default(MANUAL)
-  poNumber       String?
-  expectedDate   DateTime?
-  notes          String?
-  scanAttachmentUrl String?
-  scanRawData    Json?
-  createdById    String
-  createdBy      User                @relation("POCreatedBy", fields: [createdById], references: [id])
-  receivedById   String?
-  receivedBy     User?               @relation("POReceivedBy", fields: [receivedById], references: [id])
-  submittedAt    DateTime?
-  receivedAt     DateTime?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+model ImportJob {
+  id              String              @id @default(cuid())
+  businessId      String
+  business        Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplierId      String?
+  supplier        Supplier?           @relation(fields: [supplierId], references: [id])
+  posConnectionId String?
+  posConnection   POSConnection?      @relation(fields: [posConnectionId], references: [id])
+  sourceType      ImportSourceType
+  originalFileUrl String?
+  originalFileName String?
+  status          ImportJobStatus     @default(PROCESSING)
+  columnMapping   Json?
+  rawFileData     Json?
+  rawOcrData      Json?
+  failureReason   String?
+  createdById     String
+  createdBy       User                @relation("ImportJobCreatedBy", fields: [createdById], references: [id])
+  approvedById    String?
+  approvedBy      User?               @relation("ImportJobApprovedBy", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  pushedAt        DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
-  lineItems             PurchaseOrderLineItem[]
-  inventoryAdjustments  InventoryAdjustment[]
+  rows     ImportRow[]
+  pushLogs PushLog[]
 
   @@index([businessId])
   @@index([businessId, status])
-  @@index([businessId, supplierId])
 }
 
-model PurchaseOrderLineItem {
-  id              String        @id @default(cuid())
-  purchaseOrderId String
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  productId       String
-  product         Product       @relation(fields: [productId], references: [id])
-  quantityOrdered Int
-  quantityReceived Int          @default(0)
-  unitCost        Decimal       @db.Decimal(10, 2)
-  receivedUnitCost Decimal?     @db.Decimal(10, 2)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+model ImportRow {
+  id                String              @id @default(cuid())
+  importJobId       String
+  importJob         ImportJob           @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  rowIndex          Int
+  rawData           Json
+  mappedData        Json
+  validationStatus  RowValidationStatus @default(NEEDS_REVIEW)
+  validationMessages String[]           @default([])
+  confidence        Float?
+  matchedProductId  String?
+  matchedProduct    Product?            @relation(fields: [matchedProductId], references: [id])
+  approved          Boolean             @default(false)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
-  @@index([purchaseOrderId])
-  @@index([productId])
+  pushLogs PushLog[]
+
+  @@index([importJobId])
+  @@index([importJobId, validationStatus])
 }
 
-model Sale {
-  id            String        @id @default(cuid())
-  businessId    String
-  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  staffId       String
-  staff         User          @relation(fields: [staffId], references: [id])
-  paymentMethod PaymentMethod
-  subtotal      Decimal       @db.Decimal(10, 2)
-  taxTotal      Decimal       @db.Decimal(10, 2)
-  total         Decimal       @db.Decimal(10, 2)
-  createdAt     DateTime      @default(now())
-
-  lineItems             SaleLineItem[]
-  inventoryAdjustments  InventoryAdjustment[]
-
-  @@index([businessId])
-  @@index([businessId, createdAt])
-}
-
-model SaleLineItem {
-  id         String  @id @default(cuid())
-  saleId     String
-  sale       Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  productId  String
-  product    Product @relation(fields: [productId], references: [id])
-  quantity   Int
-  priceAtSale Decimal @db.Decimal(10, 2)
-
-  @@index([saleId])
-  @@index([productId])
-}
-
-model InventoryAdjustment {
-  id              String           @id @default(cuid())
+// Cached/synced representation of what's in the connected POS — not the source of truth.
+model Product {
+  id              String         @id @default(cuid())
   businessId      String
-  productId       String
-  product         Product          @relation(fields: [productId], references: [id])
-  delta           Int
-  reason          AdjustmentReason
-  purchaseOrderId String?
-  purchaseOrder   PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id])
-  saleId          String?
-  sale            Sale?            @relation(fields: [saleId], references: [id])
-  userId          String
-  user            User             @relation(fields: [userId], references: [id])
-  note            String?
-  createdAt       DateTime         @default(now())
+  business        Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  posConnectionId String?
+  posConnection   POSConnection? @relation(fields: [posConnectionId], references: [id])
+  externalId      String?
+  sku             String
+  name            String
+  description     String?
+  cost            Decimal        @default(0) @db.Decimal(10, 2)
+  price           Decimal        @default(0) @db.Decimal(10, 2)
+  quantityOnHand  Int            @default(0)
+  category        String?
+  lastSyncedAt    DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
-  @@index([businessId])
-  @@index([productId])
-}
+  importRows ImportRow[]
 
-model WebExportConfig {
-  id            String   @id @default(cuid())
-  businessId    String
-  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  name          String
-  baseUrl       String
-  authType      String   @default("bearer")
-  authHeaderName String  @default("Authorization")
-  authToken     String
-  fieldMapping  Json
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  webListings WebListing[]
-
+  @@unique([businessId, sku])
   @@index([businessId])
 }
 
-model WebListing {
-  id             String     @id @default(cuid())
-  productId      String
-  product        Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-  configId       String
-  config         WebExportConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
-  externalId     String?
-  syncStatus     SyncStatus @default(NOT_SYNCED)
-  lastSyncedAt   DateTime?
-  lastError      String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+model POSConnection {
+  id              String               @id @default(cuid())
+  businessId      String
+  business        Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  platform        POSPlatform
+  status          POSConnectionStatus  @default(NOT_CONNECTED)
+  accessToken     String?
+  refreshToken    String?
+  tokenExpiresAt  DateTime?
+  externalLocationId String?
+  config          Json?
+  lastError       String?
+  lastSyncedAt    DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
-  @@unique([productId, configId])
-  @@index([productId])
+  importJobs ImportJob[]
+  products   Product[]
+  pushLogs   PushLog[]
+
+  @@unique([businessId, platform])
+  @@index([businessId])
+}
+
+// Full audit trail of what was sent to a POS API, when, and the result.
+model PushLog {
+  id              String         @id @default(cuid())
+  importJobId     String
+  importJob       ImportJob      @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  importRowId     String?
+  importRow       ImportRow?     @relation(fields: [importRowId], references: [id])
+  posConnectionId String
+  posConnection   POSConnection  @relation(fields: [posConnectionId], references: [id])
+  action          PushAction
+  requestPayload  Json
+  responsePayload Json?
+  success         Boolean
+  errorMessage    String?
+  pushedById      String
+  pushedBy        User           @relation(fields: [pushedById], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@index([importJobId])
+  @@index([posConnectionId])
 }

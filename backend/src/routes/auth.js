@@ -22,7 +22,6 @@ function toPublicUser(user) {
   return rest;
 }
 
-// Register a brand-new Business along with its first Owner user.
 router.post(
   '/register-business',
   [
@@ -41,12 +40,7 @@ router.post(
         data: {
           name: businessName,
           users: {
-            create: {
-              email,
-              name: ownerName,
-              passwordHash,
-              role: 'OWNER',
-            },
+            create: { email, name: ownerName, passwordHash, role: 'OWNER' },
           },
         },
         include: { users: true },

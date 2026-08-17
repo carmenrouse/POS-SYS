@@ -8,7 +8,6 @@ const { validate } = require('../middleware/validate');
 const { ApiError } = require('../middleware/errorHandler');
 
 const router = express.Router();
-
 router.use(authenticate);
 
 function toPublicUser(user) {
@@ -16,7 +15,6 @@ function toPublicUser(user) {
   return rest;
 }
 
-// Owner manages staff accounts.
 router.get('/', requireRole('OWNER'), async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({ where: { businessId: req.user.businessId } });
@@ -33,7 +31,7 @@ router.post(
     body('email').isEmail().normalizeEmail(),
     body('name').isString().trim().notEmpty(),
     body('password').isLength({ min: 8 }),
-    body('role').isIn(['OWNER', 'MANAGER', 'CASHIER']),
+    body('role').isIn(['OWNER', 'MANAGER', 'STAFF']),
   ],
   validate,
   async (req, res, next) => {
@@ -55,7 +53,7 @@ router.patch(
   requireRole('OWNER'),
   [
     body('name').optional().isString().trim().notEmpty(),
-    body('role').optional().isIn(['OWNER', 'MANAGER', 'CASHIER']),
+    body('role').optional().isIn(['OWNER', 'MANAGER', 'STAFF']),
     body('active').optional().isBoolean(),
     body('password').optional().isLength({ min: 8 }),
   ],

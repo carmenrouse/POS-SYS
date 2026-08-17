@@ -20,11 +20,7 @@ router.get('/', async (req, res, next) => {
 router.patch(
   '/',
   requireRole('OWNER'),
-  [
-    body('name').optional().isString().trim().notEmpty(),
-    body('taxRate').optional().isFloat({ min: 0, max: 1 }),
-    body('allowNegativeStock').optional().isBoolean(),
-  ],
+  [body('name').optional().isString().trim().notEmpty()],
   validate,
   async (req, res, next) => {
     try {

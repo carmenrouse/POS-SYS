@@ -20,8 +20,8 @@ async function authenticate(req, res, next) {
   }
 }
 
-// Role hierarchy: OWNER > MANAGER > CASHIER
-const ROLE_RANK = { CASHIER: 1, MANAGER: 2, OWNER: 3 };
+// Role hierarchy: OWNER > MANAGER > STAFF
+const ROLE_RANK = { STAFF: 1, MANAGER: 2, OWNER: 3 };
 
 function requireRole(minRole) {
   return (req, res, next) => {
@@ -33,4 +33,4 @@ function requireRole(minRole) {
   };
 }
 
-module.exports = { authenticate, requireRole };
+module.exports = { authenticate, requireRole, ROLE_RANK };
