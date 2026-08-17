@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "PushAction" ADD VALUE 'NEEDS_CONFIRMATION';

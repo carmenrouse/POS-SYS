@@ -17,6 +17,7 @@ const { validateRow } = require('../services/csv/validation');
 const { matchProduct } = require('../services/csv/productMatcher');
 const { exportCsv, exportXlsx } = require('../services/csv/exportFile');
 const { INTERNAL_FIELDS } = require('../services/csv/internalFields');
+const { pushImportJob } = require('../services/pos/pushService');
 
 const router = express.Router();
 router.use(authenticate);
@@ -378,6 +379,45 @@ router.get('/:id/export', [query('format').optional().isIn(['csv', 'xlsx'])], va
       res.setHeader('Content-Disposition', `attachment; filename="import-${job.id}.csv"`);
       res.send(csv);
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Output option (b): push approved rows directly to a connected POS via its
+// adapter. Rows with no matching cached product are skipped unless their id
+// is explicitly confirmed for new-product creation.
+router.post(
+  '/:id/push',
+  requireRole('MANAGER'),
+  [body('posConnectionId').isString().notEmpty(), body('confirmedNewProductRowIds').optional().isArray()],
+  validate,
+  async (req, res, next) => {
+    try {
+      const result = await pushImportJob({
+        businessId: req.user.businessId,
+        importJobId: req.params.id,
+        posConnectionId: req.body.posConnectionId,
+        userId: req.user.id,
+        confirmedNewProductRowIds: req.body.confirmedNewProductRowIds || [],
+      });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.get('/:id/push-log', async (req, res, next) => {
+  try {
+    const job = await prisma.importJob.findFirst({ where: { id: req.params.id, businessId: req.user.businessId } });
+    if (!job) throw new ApiError(404, 'Import job not found');
+    const logs = await prisma.pushLog.findMany({
+      where: { importJobId: job.id },
+      include: { pushedBy: { select: { id: true, name: true } }, posConnection: { select: { platform: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(logs);
   } catch (err) {
     next(err);
   }

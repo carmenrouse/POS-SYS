@@ -51,6 +51,7 @@ enum POSConnectionStatus {
 enum PushAction {
   CREATE_PRODUCT
   UPDATE_INVENTORY
+  NEEDS_CONFIRMATION
 }
 
 model Business {

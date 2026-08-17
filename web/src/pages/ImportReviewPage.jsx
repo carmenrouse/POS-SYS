@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 
 import client, { apiErrorMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Badge, Button, Card, ErrorText } from '../components/ui';
+import { Badge, Button, Card, ErrorText, Field } from '../components/ui';
 import { jobStatusTone, rowStatusTone, formatDateTime, formatMoney } from '../utils';
 
 function RowEditor({ row, canEdit, onSave, onApprove }) {
@@ -95,6 +95,11 @@ export default function ImportReviewPage() {
   const [job, setJob] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [connections, setConnections] = useState([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState('');
+  const [confirmedRowIds, setConfirmedRowIds] = useState(new Set());
+  const [pushing, setPushing] = useState(false);
+  const [pushResult, setPushResult] = useState(null);
 
   function load() {
     client
@@ -103,6 +108,17 @@ export default function ImportReviewPage() {
       .catch((err) => setError(apiErrorMessage(err)));
   }
   useEffect(load, [id]);
+
+  useEffect(() => {
+    client
+      .get('/pos-connections')
+      .then(({ data }) => {
+        const connected = data.filter((c) => c.status === 'CONNECTED');
+        setConnections(connected);
+        if (connected.length > 0) setSelectedConnectionId(connected[0].id);
+      })
+      .catch(() => {});
+  }, []);
 
   async function saveRow(rowId, form) {
     setError('');
@@ -183,10 +199,38 @@ export default function ImportReviewPage() {
     }
   }
 
+  function toggleConfirmedRow(rowId, checked) {
+    setConfirmedRowIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(rowId);
+      else next.delete(rowId);
+      return next;
+    });
+  }
+
+  async function pushToPos() {
+    setError('');
+    setPushing(true);
+    setPushResult(null);
+    try {
+      const { data } = await client.post(`/import-jobs/${id}/push`, {
+        posConnectionId: selectedConnectionId,
+        confirmedNewProductRowIds: [...confirmedRowIds],
+      });
+      setPushResult(data.results);
+      load();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setPushing(false);
+    }
+  }
+
   if (!job) return <ErrorText text={error} />;
 
   const approvedCount = job.rows.filter((r) => r.approved).length;
   const cleanCount = job.rows.filter((r) => r.validationStatus === 'CLEAN').length;
+  const unmatchedApprovedRows = job.rows.filter((r) => r.approved && !(r.matchedProduct && r.matchedProduct.externalId));
 
   return (
     <div>
@@ -237,9 +281,58 @@ export default function ImportReviewPage() {
           <Button variant="secondary" onClick={() => exportFile('xlsx')}>
             Export approved rows (XLSX)
           </Button>
-          <p className="help-text" style={{ marginTop: 8 }}>
-            Connect a POS under Settings to push directly instead of exporting.
-          </p>
+
+          {connections.length === 0 ? (
+            <p className="help-text" style={{ marginTop: 8 }}>
+              No connected POS yet — connect one under POS Connections to push directly instead of exporting.
+            </p>
+          ) : (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <h2 style={{ fontSize: 14 }}>Push to POS</h2>
+              <Field label="Destination">
+                <select value={selectedConnectionId} onChange={(e) => setSelectedConnectionId(e.target.value)}>
+                  {connections.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.platform}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {unmatchedApprovedRows.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <p className="help-text">
+                    These approved rows don't match an existing product in this POS. Confirm which ones should be
+                    created as new products — unconfirmed rows are skipped.
+                  </p>
+                  {unmatchedApprovedRows.map((row) => (
+                    <label key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 400, marginBottom: 4 }}>
+                      <input
+                        type="checkbox"
+                        checked={confirmedRowIds.has(row.id)}
+                        onChange={(e) => toggleConfirmedRow(row.id, e.target.checked)}
+                      />
+                      Create "{row.mappedData.name}" ({row.mappedData.sku}) as a new product
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              <Button onClick={pushToPos} loading={pushing}>
+                Push {approvedCount} approved row{approvedCount === 1 ? '' : 's'}
+              </Button>
+
+              {pushResult && (
+                <ul style={{ marginTop: 12, fontSize: 13 }}>
+                  {pushResult.map((r) => (
+                    <li key={r.importRowId} style={{ color: r.success ? 'var(--success)' : 'var(--danger)' }}>
+                      {r.action} — {r.success ? 'OK' : r.error}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </Card>
       )}
 
